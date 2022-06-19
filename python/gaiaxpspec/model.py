@@ -644,7 +644,7 @@ class XPModelSet(object):
         if pars is None:
             pars = np.array([teff,logg,feh])
             pars = pars.flatten()
-        # Get best cannon model
+        # Get best model
         model = self.get_best_model(pars)
         if model is None: return None
 
