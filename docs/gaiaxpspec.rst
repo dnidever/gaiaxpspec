@@ -4,6 +4,14 @@ gaiaxpspec package
 Submodules
 ----------
 
+gaiaxpspec.fitter module
+------------------------
+
+.. automodule:: gaiaxpspec.fitter
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 gaiaxpspec.model module
 -----------------------
 
