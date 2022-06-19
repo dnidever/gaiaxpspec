@@ -3,4 +3,7 @@ matplotlib
 astropy
 scipy
 dlnpyutils
-
+pandas
+gaiaxpy
+emcee
+dill

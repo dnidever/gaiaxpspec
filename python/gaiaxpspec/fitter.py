@@ -22,6 +22,8 @@ import copy
 import logging
 import contextlib, io, sys
 import time
+import pandas as pd
+from gaiaxpy import calibrate
 try:
     import __builtin__ as builtins # Python 2
 except ImportError:
@@ -64,7 +66,7 @@ def apogee_estimate(spec):
 
     return out
 
-def solvestar(spec,initpar=None):
+def solvestar(spec,initpar=None,bounds=None):
     """
     Solve the stellar parameters and extinction for a star.
     """
@@ -84,15 +86,16 @@ def solvestar(spec,initpar=None):
     tol = 5e-4   # tolerance for when the optimizer should stop optimizing.
 
     # prohibit the minimimizer to go outside the range of training set
-    bounds = np.zeros((2,4))
-    bounds[0,0] = 3100   # teff
-    bounds[1,0] = 6800
-    bounds[0,1] = -0.3   # logg
-    bounds[1,1] = 5.3
-    bounds[0,2] = -2.4   # feh
-    bounds[1,2] = 0.5
-    bounds[0,3] = 0      # a55
-    bounds[1,3] = 10
+    if bounds is None:
+        bounds = np.zeros((2,4))
+        bounds[0,0] = 3100   # teff
+        bounds[1,0] = 6800
+        bounds[0,1] = -0.3   # logg
+        bounds[1,1] = 5.3
+        bounds[0,2] = -2.4   # feh
+        bounds[1,2] = 0.5
+        bounds[0,3] = 0      # a55
+        bounds[1,3] = 10
 
     def fit_func(x,*args):
         labels = args
@@ -127,3 +130,66 @@ def solvestar(spec,initpar=None):
 
     return out, mspec
     
+def solvecatalog(filename):
+    """
+    Load the Bp/RP spectra from a file and solve them using the APOGEE.
+    Can do multiple files.
+    """
+
+    if os.path.exists(filename)==False:
+        print(filename,' NOT FOUND')
+
+
+    if filename.find('.csv.gz')>-1:
+        basename = filename[:-7]
+    elif filename.find('.csv')>-1:
+        basename = filename[:-4]
+    elif filename.find('.fits')>-1:
+        basename = filename[:-5]
+        
+    print('Loading ',filename)
+
+    # Loading continuous spectrum file
+    if filename.find('.csv.gz')>-1 or filename.find('.csv')>-1:
+        df = pd.read_csv(filename,comment='#')
+        for c in ['rp_coefficients','rp_coefficient_errors','rp_coefficient_correlations','bp_coefficients',
+                  'bp_coefficient_errors','bp_coefficient_correlations']:
+            df[c] = df[c].str.replace('[','(')
+            df[c] = df[c].str.replace(']',')')            
+        tab = Table.from_pandas(df)
+    else:
+        tab = Table.read(filename)
+
+    # Convert bytes to string
+    for c in ['rp_coefficients','rp_coefficient_errors','rp_coefficient_correlations','bp_coefficients',
+              'bp_coefficient_errors','bp_coefficient_correlations']:
+        tab[c] = tab[c].astype(str)
+            
+    df = tab.to_pandas()
+    calibrated_spectra, sampling = calibrate(df,save_file=False)
+    temp = Table.from_pandas(calibrated_spectra)
+    fluxtab = temp.copy()
+    # flux and flux_error are type "object"
+    fluxtab.remove_columns(['flux','flux_error'])
+    fluxtab['flux'] = np.zeros((len(fluxtab),343),float)
+    fluxtab['flux_error'] = np.zeros((len(fluxtab),343),float)
+    for i in range(len(fluxtab)):
+        fluxtab['flux'][i] = temp['flux'][i]
+        fluxtab['flux_error'][i] = temp['flux_error'][i]
+        
+    ntab = len(fluxtab)
+    print(ntab,' stars')
+                
+    # Loop over the stars
+    outcat = None
+    for i in range(ntab):
+        spec = XPSpec(fluxtab[i]['flux'],err=fluxtab[i]['flux_error'])
+        out = solvestar(spec)
+        fmt = '%5d %10.3f %8.3f %8.3f %8.3f'
+        print(fmt % (i+1,out['teff'][0],out['logg'][0],out['feh'][0],out['a55'][0]))
+        if outcat is None:
+            outcat = out
+        else:
+            outcat = vstack((outcat,out))
+        
+    return outcat
