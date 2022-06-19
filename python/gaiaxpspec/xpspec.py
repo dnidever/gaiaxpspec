@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
-"""SPEC1D.PY - The spectrum 1D class and methods
+"""XPSPEC.PY - The spectrum class and methods
 
 """
 
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@montana.edu>'
-__version__ = '20210605'  # yyyymmdd                                                                                                                           
+__version__ = '20220618'  # yyyymmdd                                                                                                                           
 
 import numpy as np
 import math
@@ -22,7 +22,6 @@ import thecannon as tc
 from dlnpyutils import utils as dln, bindata
 import copy
 from . import utils
-from .lsf import GaussianLsf, GaussHermiteLsf
 import dill as pickle
 try:
     import __builtin__ as builtins # Python 2
@@ -35,94 +34,22 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 cspeed = 2.99792458e5  # speed of light in km/s
 
-# LSF class dictionary
-lsfclass = {'gaussian': GaussianLsf, 'gauss-hermite': GaussHermiteLsf}
-
 # Get print function to be used locally, allows for easy logging
 print = utils.getprintfunc() 
 
+fitz = Table.read(utils.datadir()+'fitzpatrick2019_gaiabprp_extinction.fits')
 
-def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
-    """
-    Measure the continuum of a spectrum.
+# Continuum normalize using median
+def continuum_median(spec):
+    return np.nanmedian(spec.flux)
 
-    Parameters
-    ----------
-    spec : Spec1D object
-           A spectrum object.  This at least needs
-                to have a FLUX and WAVE attribute.
-    norder : float, optional
-            Polynomial order to use for the continuum fitting.
-            The default is 6.
-    perclevel : float, optional
-            Percent level to use for the continuum value
-            in large bins.  Default is 90.
-    binsize : float, optional
-            Fraction of the wavelength range (scaled to -1 to +1) to bin.
-            Default is 0.1.
-    interp : bool, optional
-            Use interpolation of the binned values instead of a polynomial
-            fit.  Default is True.
-
-    Returns
-    -------
-    cont : numpy array
-            The continuum array, in the same shape as the input flux.
-
-    Examples
-    --------
-    .. code-block:: python
-
-         cont = continuum(spec)
-
-    """
-
-    wave = spec.wave.copy().reshape(spec.npix,spec.norder)   # make 2D
-    flux = spec.flux.copy().reshape(spec.npix,spec.norder)   # make 2D
-    err = spec.err.copy().reshape(spec.npix,spec.norder)     # make 2D
-    mask = spec.mask.copy().reshape(spec.npix,spec.norder)   # make 2D
-    cont = err.copy()*0.0+1
-    for o in range(spec.norder):
-        w = wave[:,o].copy()
-        wr = [np.min(w),np.max(w)]
-        x = (w-np.mean(wr))/dln.valrange(wr)*2    # -1 to +1
-        y = flux[:,o].copy()
-        m = mask[:,o].copy()
-        # Divide by median
-        medy = np.nanmedian(y)
-        if medy <= 0.0:
-            medy = 1.0
-        y /= medy
-        # Perform sigma clipping out large positive outliers
-        coef = dln.poly_fit(x[~m],y[~m],2,robust=True)
-        sig = dln.mad(y-dln.poly(x,coef))
-        bd,nbd = dln.where((y-dln.poly(x,coef)) > 5*sig)
-        if nbd>0: m[bd]=True
-        gdmask = (y>0) & (m==False)        # need positive fluxes and no mask set          
-        if np.sum(gdmask)==0:
-            continue
-        # Bin the data points
-        xr = [np.nanmin(x),np.nanmax(x)]
-        bins = int(np.ceil((xr[1]-xr[0])/binsize))
-        ybin, bin_edges, binnumber = bindata.binned_statistic(x[gdmask],y[gdmask],statistic='percentile',
-                                                              percentile=perclevel,bins=bins,range=None)
-        xbin = bin_edges[0:-1]+0.5*binsize
-        # Interpolate to full grid
-        if interp is True:
-            fnt = np.isfinite(ybin)
-            cont1 = dln.interp(xbin[fnt],ybin[fnt],x,kind='quadratic',extrapolate=True,exporder=1)
-        else:
-            coef = dln.poly_fit(xbin,ybin,norder)
-            cont1 = dln.poly(x,coef)
-        cont1 *= medy
-        cont[:,o] = cont1
-        
-    # Flatten to 1D if norder=1
-    if spec.norder==1:
-        cont = cont.flatten()            
-
-    return cont
-
+# Continuum normalize using central 11 pixels
+def continuum_central(spec,npix=11):
+    cen = len(spec.flux)//2
+    hpix = npix//2
+    lo = cen-hpix
+    hi = cen+hpix+1
+    return np.nanmedian(spec.flux[lo:hi])
 
 # Combine multiple spectra
 def combine(speclist,wave=None,sum=False):
@@ -206,16 +133,30 @@ def combine(speclist,wave=None,sum=False):
         aerr *= nspec
 
     # Create output spectrum object
-    ospec = Spec1D(aflux,err=aerr)
+    ospec = XPSpec(aflux,err=aerr)
     # cannot handle LSF yet
 
     return ospec
 
+def fitz_extinct(A55,R55=3.02):
+    # Get extinction
+    # Fitzpatrick+2019, eq.8
+    # k(lambda-55)_R(55) = k(lambda-55)0 + s(lambda-55) * (R(55)-R(55)0)
+    # where R(55)0 = 3.02
+    klambda55 = fitz['klambda55'] + fitz['slambda55'] * (R55-3.02)
+    # From Fitzpatrick+2019 eq. 19
+    # A(lambda)/A(V) = k(lambda-V)/R(V) + 1
+    # or using 55 instead of V
+    # A(lambda)/A(55) = k(lambda-55)/R(55) + 1
+    alambda = A55 * (klambda55/R55+1)
+    # Convert to linear attenuation
+    attenuation = 10**(alambda/-2.5)
+    return alambda, attenuation
 
 # Object for representing 1D spectra
-class Spec1D:
+class XPSpec:
     """
-    A class to represent 1D spectra.
+    A class to represent Gaia Xp/RP combined spectra.
 
     Parameters
     ----------
@@ -230,30 +171,13 @@ class Spec1D:
         Boolean bad pixel mask array (good=False, bad=True) for flux.  Same shape as flux.
     bitmask : array, optional
         Bit mask giving specific information for each flux pixel.  Same shape as flux.
-    lsfpars : array, optional
-        The Line Spread Profile (LSF) coefficients as a function of wavelength or pixel
-        (that is specified in lsfxtype).
-    lsftype : string, optional
-       The type of LSF: 'Gaussian' or 'Gauss-Hermite'.
-    lsfxtype: string, optional
-       If lsfpars is input, then this specifies whether the coeficients depend on wavelength
-       ('wave') or pixels ('pixel').  The output LSF parameters (e.g. Gaussian sigma), must
-       also use the same units.
-    lsfsigma : array, optional
-        Array of Gaussian sigma values for each pixel.  Same shape as flux.
-    instrument : string, optional
-        Name of the instrument on which the spectrum was observed.
-    filename : string, optional
-        File name of the spectrum.
-    wavevac: bool, optional
-        Whether the spectrum wavelengths are vacuum wavelengths (wavevac=True) or air wavelengths (wavevac=False).
 
     """
 
     
     # Initialize the object
-    def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,lsftype='Gaussian',
-                 lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
+    def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,
+                 instrument='GaiaXP',filename=None,continuum_func=continuum_median):
         """ Initialize Spec1D object."""
         self.flux = flux
         self.err = err
@@ -263,13 +187,8 @@ class Spec1D:
             self.mask = np.zeros(flux.shape,bool)
         self.bitmask = bitmask
         self.head = head
-        if lsftype.lower() not in lsfclass.keys():
-            raise ValueError(lsftype+' not supported yet')
-        self.lsf = lsfclass[lsftype.lower()](wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
-        #self.lsf = Lsf(wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
         self.instrument = instrument
         self.filename = filename
-        self.wavevac = wavevac
         self.snr = None
         if self.err is not None:
             self.snr = np.nanmedian(self.flux[~self.mask])/np.nanmedian(self.err[~self.mask])
@@ -282,18 +201,19 @@ class Spec1D:
         self.ndim = flux.ndim
         self.npix = npix
         self.norder = norder
-        self.continuum_func = continuum
-        self._cont = None        
+        self.continuum_func = continuum_func
+        self._cont = None
         return
-
     
     def __repr__(self):
         """ Print out the string representation of the Spec1D object."""
         s = repr(self.__class__)+"\n"
         if self.instrument is not None:
             s += self.instrument+" spectrum\n"
+        if self.instrument is not None:
+            s += "Instrument = "+self.instrument+"\n"
         if self.filename is not None:
-            s += "File = "+self.filename+"\n"
+            s += "File = "+self.filename+"\n"            
         if self.snr is not None:
             s += ("S/N = %7.2f" % self.snr)+"\n"
         if self.norder>1:
@@ -307,12 +227,15 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
+    def getcont(self,**kwargs):
+        """ Calculate the continuum value. """
+        return self.continuum_func(self,**kwargs)
     
     @property
     def cont(self,**kwargs):
         """ Return the continuum."""
         if self._cont is None:
-            cont = self.continuum_func(self,**kwargs)
+            cont = self.getcont(**kwargs)
             self._cont = cont
         return self._cont
 
@@ -320,7 +243,23 @@ class Spec1D:
     def cont(self,inpcont):
         """ Set the continuum."""
         self._cont = inpcont
-    
+
+    def extinct(self,a55,r55=3.02):
+        """ Apply extinction to the spectrum."""
+        flux = self._flux.copy()
+        self.a55 = a55
+        self.r55 = r55
+        
+        # Extinct it
+        if a55 > 0:
+            # Get the extinction            
+            alambda,attenuation = fitz_extinct(a55,r55)
+            # Now apply the extinction to the model
+            self.flux = flux*attenuation
+            # Normalize again
+            self.normalized = False
+            self.normalize()
+        
     def wave2pix(self,w,extrapolate=True,order=0):
         """
         Convert wavelength values to pixels using the spectrum dispersion
@@ -422,11 +361,10 @@ class Spec1D:
         if self.normalized is True:
             return
         
-        self._flux = self.flux.copy()  # Save the original
-
         # Use the continuum_func to get the continuum
-        cont = self.cont
-        self.err /= cont
+        cont = self.getcont()
+        if self.err is not None:
+            self.err /= cont
         self.flux /= cont
         self.cont = cont
         self.normalized = True
@@ -497,12 +435,6 @@ class Spec1D:
                     oflux[ind,i] = dln.interp(swave1,sflux1,wave1[ind],extrapolate=False,assume_sorted=False)
                     oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,assume_sorted=False,kind='linear')
                     osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,assume_sorted=False)
-                    # Gauss-Hermite, convert to wavelength units
-                    if self.lsf.lsftype=='Gauss-Hermite':
-                        sdw1 = np.abs(swave1[1:]-swave1[0:-1])
-                        sdw1 = np.hstack((sdw1,sdw1[-1])) 
-                        dw = dln.interp(swave1,sdw1,wave1[ind],extrapolate=False,assume_sorted=False)
-                        osigma[ind,i] *= dw   # in Ang
                     mask_interp = dln.interp(swave1,smask1,wave1[ind],extrapolate=False,assume_sorted=False)                    
                     mask_interp_bool = np.zeros(nind,bool)
                     mask_interp_bool[mask_interp>0.4] = True
@@ -535,27 +467,13 @@ class Spec1D:
             oerr = oerr.flatten()
             osigma = osigma.flatten()            
             omask = omask.flatten()
-        # Create output spectrum object
-        if self.lsf.lsftype=='Gauss-Hermite':
-            # Can't interpolate Gauss-Hermite LSF yet
-            # instead convert to a Gaussian approximation in wavelength units
-            #print('Cannot interpolate Gauss-Hermite LSF yet')
-            lsfxtype = 'wave'
-        else:
-            lsfxtype = self.lsf.xtype
-        ospec = Spec1D(oflux,wave=wave,err=oerr,mask=omask,lsftype='Gaussian',
-                       lsfxtype=lsfxtype,lsfsigma=osigma)
+        ospec = XPSpec(oflux,wave=wave,err=oerr,mask=omask)
 
         return ospec
                 
 
     def copy(self):
         """ Create a new copy."""
-        if self.lsf.pars is not None:
-            newlsfpars = self.lsf.pars.copy()
-        else:
-            newlsfpars = None
-        newlsf = self.lsf.copy()
         if self.err is not None:
             newerr = self.err.copy()
         else:
@@ -568,50 +486,13 @@ class Spec1D:
             newmask = self.mask.copy()
         else:
             newmask = None
-        new = Spec1D(self.flux.copy(),err=newerr,wave=newwave,mask=newmask,
-                     lsfpars=newlsfpars,lsftype=newlsf.lsftype,lsfxtype=newlsf.xtype,
-                     lsfsigma=newlsf.sigma,instrument=self.instrument,filename=self.filename)
-        new.lsf = newlsf  # make sure all parts of Lsf are copied over
+        new = XPSpec(self.flux.copy(),err=newerr,wave=newwave,mask=newmask,
+                     instrument=self.instrument,filename=self.filename)
         for name, value in vars(self).items():
-            if name not in ['flux','wave','err','mask','lsf','instrument','filename']:
+            if name not in ['flux','wave','err','mask','instrument','filename']:
                 setattr(new,name,copy.deepcopy(value))           
 
         return new
-
-    def barycorr(self):
-        """ calculate the barycentric correction."""
-        # keck = EarthLocation.of_site('Keck')  # the easiest way... but requires internet
-        #keck = EarthLocation.from_geodetic(lat=19.8283*u.deg, lon=-155.4783*u.deg, height=4160*u.m)
-        # Calculate the barycentric correction
-        if hasattr(self,'bc') is False:
-            if hasattr(self,'observatory') is False:
-                print('No observatory information.  Cannot calculate barycentric correction.')
-                return 0.0
-            obs = EarthLocation.of_site(self.observatory)
-            ra = self.head.get('ra')
-            if type(ra) is str:
-                ra = dln.sexig2ten(ra)*15.0  # convert to degrees
-            dec = self.head.get('dec')
-            if type(dec) is str:
-                dec = dln.sexig2ten(dec)
-            if (ra is None) | (dec is None):
-                print('No RA/DEC information in header.  Cannot calculate barycentric correction.')
-                return 0.0                
-            sc = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
-            dateobs = self.head.get('date-obs')
-            if (dateobs is None):
-                print('No DATE information in header.  Cannot calculate barycentric correction.')
-                return 0.0
-            t = Time(dateobs, format='isot', scale='utc')
-            exptime = self.head.get('exptime')
-            # Take mid-point of exposure
-            if exptime is not None:
-                t += 0.5*exptime/3600.0/24.0   # add half in days
-            barycorr = sc.radial_velocity_correction(kind='barycentric',obstime=t, location=obs)  
-            bc = barycorr.to(u.km/u.s)  
-            self.bc = bc.value
-        return self.bc
-        
 
     def write(self,outfile,overwrite=True):
         """ Write the spectrum to a FITS file."""
@@ -624,12 +505,7 @@ class Spec1D:
         hdu[0].header['COMMENT'] = 'HDU2: flux error'
         hdu[0].header['COMMENT'] = 'HDU3: wavelength'
         hdu[0].header['COMMENT'] = 'HDU4: mask'
-        hdu[0].header['COMMENT'] = 'HDU5: LSF'
-        hdu[0].header['COMMENT'] = 'HDU6: continuum'
-        hdu[0].header['COMMENT'] = 'HDU7: continuum function'        
-        hdu[0].header['SPECTYPE'] = 'SPEC1D'
-        hdu[0].header['INSTRMNT'] = self.instrument
-        hdu[0].header['WAVEVAC'] = self.wavevac
+        hdu[0].header['SPECTYPE'] = 'XPSPEC'
         hdu[0].header['NORMLIZD'] = self.normalized
         hdu[0].header['NDIM'] = self.ndim
         hdu[0].header['NPIX'] = self.npix
@@ -647,35 +523,4 @@ class Spec1D:
         # mask
         hdu.append(fits.ImageHDU(self.mask.astype(int)))
         hdu[4].header['BUNIT'] = 'Mask'
-        # LSF
-        #  ADD A WRITE() METHOD TO LSF class
-        #  can write to FITS or hdu if hdu=True is set
-        hdu.append(fits.ImageHDU(self.lsf._sigma))
-        hdu[5].header['BUNIT'] = 'LSF'
-        hdu[5].header['XTYPE'] = self.lsf.xtype
-        hdu[5].header['LSFTYPE'] = self.lsf.lsftype
-        hdu[5].header['NDIM'] = self.lsf.ndim
-        hdu[5].header['NPIX'] = self.lsf.npix
-        hdu[5].header['NORDER'] = self.lsf.norder
-        # should we put PARS in the header, or should it be a separate extension??
-        if self.lsf.pars is not None:
-            hdu[5].header['NPARS'] = np.array(self.lsf.pars).size
-            npars1, npars2 = np.array(self.lsf.pars).shape
-            hdu[5].header['NPARS1'] = npars1
-            hdu[5].header['NPARS2'] = npars2      
-            for i,p in enumerate(np.array(self.lsf.pars).flatten()):
-                hdu[5].header['PAR'+str(i)] = p
-        else:
-            hdu[5].header['NPARS'] = 0
-            hdu[5].header['NPARS1'] = 0
-            hdu[5].header['NPARS2'] = 0            
-        # continuum
-        hdu.append(fits.ImageHDU(self._cont))
-        hdu[6].header['BUNIT'] = 'Continuum'
-        # continuum function
-        cont_func_ser = pickle.dumps(self.continuum_func)    # serialise the function
-        tab = Table(np.atleast_1d(np.array(cont_func_ser)),names=['func'])  # save as FITS binary table
-        hdu.append(fits.table_to_hdu(tab))
-        hdu[7].header['BUNIT'] = 'Continuum function'
-        
         hdu.writeto(outfile,overwrite=overwrite)
