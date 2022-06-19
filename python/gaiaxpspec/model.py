@@ -57,9 +57,9 @@ def load_model():
     if nfiles==0:
         raise Exception("No model files in "+datadir)
     if nfiles>1:
-        return ModelSet.read(files)
+        return XPModelSet.read(files)
     else:
-        return Model.read(files[0])
+        return XPModel.read(files[0])
 
 
 # Load a single or list of Payne models
@@ -556,8 +556,8 @@ class XPModel(object):
     @classmethod
     def read(cls,mfiles):
         """ Read a set of model files."""
-        model = Model.read(mfiles)
-        return XPModel(model)
+        m = Model.read(mfiles)
+        return XPModel(m)
 
     
 class XPModelSet(object):
