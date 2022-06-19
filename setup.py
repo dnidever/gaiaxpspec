@@ -9,7 +9,8 @@ setup(name='gaiaxpspec',
       author='David Nidever',
       author_email='dnidever@montana.edu',
       url='https://github.com/dnidever/gaiaxpspec',
-      packages=find_packages(exclude=["tests"]),
+      packages=['slitless'],
+      package_dir={'':'python'},
       scripts=['bin/gaiaxpspec'],
       install_requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils(>=1.0.3)','dill']
 )
