@@ -501,7 +501,7 @@ class XPModel(object):
         spec.extinct(a55,r55)
 
         # Set the labels
-        spec.labels = plabels+[a55,r55]
+        spec.labels = list(plabels)+[a55,r55]
         for i,l in enumerate(self.labels):
             setattr(spec,l.lower(),spec.labels[i])
         
