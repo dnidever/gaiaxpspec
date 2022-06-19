@@ -12,6 +12,6 @@ setup(name='gaiaxpspec',
       packages=['gaiaxpspec'],
       package_dir={'':'python'},
       scripts=['bin/gaiaxpspec'],
-      install_requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils(>=1.0.3)','pandas','gaiaxpy','dill','emcee'],
+      install_requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils(>=1.0.3)','gaiaxpy','dill','emcee'],
       include_package_data=True
 )
