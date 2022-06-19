@@ -18,7 +18,6 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
 from astropy.io import fits
 from astropy.table import Table
-import thecannon as tc
 from dlnpyutils import utils as dln, bindata
 import copy
 from . import utils
