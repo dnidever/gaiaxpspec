@@ -38,29 +38,6 @@ if __name__ == "__main__":
     t0 = time.time()
     files = args.files
     inpoutfile = dln.first_el(args.outfile)
-    payne = args.payne
-    # Payne labels to fit
-    fitpars = dln.first_el(args.fitpars)
-    if fitpars != '':
-        fitparams = fitpars.split(',')
-        fitparams = list(np.char.array(fitparams).upper())
-    else:
-        fitparams = None
-    # Payne labels to hold fixed
-    fixpars = dln.first_el(args.fixpars)
-    if fixpars != '':
-        fixpars = fixpars.split(',')
-        fixparams = {}
-        for k,val in enumerate(fixpars):
-            if val.find(':') != -1:
-                arr = val.split(':')
-            elif val.find('=') != -1:
-                arr = val.split('=')
-            else:
-                raise ValueError('Use format key=value or key:value')
-            fixparams[str(arr[0]).upper()] = float(arr[1])
-    else:
-        fixparams = {}
     inpfigfile = dln.first_el(args.figfile)
     outdir = dln.first_el(args.outdir)
     if outdir == '':
@@ -68,21 +45,12 @@ if __name__ == "__main__":
     else:
         if os.path.exists(outdir) is False:
             os.mkdir(outdir)
-    joint = args.joint
-    snrcut = args.snrcut
     verbose = args.verbose
     timestamp = args.timestamp    
     mcmc = args.mcmc
     corner = args.corner
-    reader = dln.first_el(args.reader)
-    if reader == '': reader = None
     saveplot = args.plot
     inlist = dln.first_el(args.list)
-    nthreads = dln.first_el(args.nthreads)
-    if nthreads==0: nthreads = None
-    notweak = args.notweak
-    tpoly = args.tpoly
-    tpolyorder = dln.first_el(args.tpolyorder)
 
     # Timestamp requested, set up logger
     if timestamp and verbose:
@@ -110,29 +78,17 @@ if __name__ == "__main__":
     nfiles = len(files)
 
     # Outfile and figfile can ONLY be used with a SINGLE file or JOINT fitting
-    if (inpoutfile!='') & (nfiles>1) & (joint is False):
-        raise ValueError('--outfile can only be used with a SINGLE input file or JOINT fitting')
-    if (inpfigfile!='') & (nfiles>1) & (joint is False):
-        raise ValueError('--figfile can only be used with a SINGLE input file or JOINT fitting')
+    if (inpoutfile!='') & (nfiles>1):
+        raise ValueError('--outfile can only be used with a SINGLE input file')
+    if (inpfigfile!='') & (nfiles>1):
+        raise ValueError('--figfile can only be used with a SINGLE input file')
 
-
-    # Register spectral reader
-    if reader is not None:
-        if os.path.exists(reader):
-            readerfile = reader
-            reader = os.path.basename(readerfile)[:-3]
-            spec = imp.util.spec_from_file_location(reader, readerfile)
-            readermodule = imp.util.module_from_spec(spec)
-            spec.loader.exec_module(readermodule)
-            readerfunc = getattr(readermodule,reader)
-            doppler.reader.register(reader,readerfunc)
-    
     # Fitting individual spectra
     #---------------------------
     if (joint is False) | (nfiles==1):
     
         if (verbose is True) & (nfiles>1):
-            print('--- Running Doppler Fit on %d spectra ---' % nfiles)
+            print('--- Running gaiaxpspec on %d spectra ---' % nfiles)
         
         # Loop over the files
         for i,f in enumerate(files):
@@ -159,29 +115,26 @@ if __name__ == "__main__":
                     figfile = inpfigfile
                 if (inpfigfile=='') & (saveplot is True):
                     fdir,base,ext = doppler.utils.splitfilename(f)
-                    figfile = base+'_dopfit.png'
+                    figfile = base+'_gaiafit.png'
                     if outdir is not None: figfile = outdir+'/'+figfile
                     if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
                 # Save a corner plot
                 cornername = None
                 if corner is True:
                     fdir,base,ext = doppler.utils.splitfilename(f)
-                    cornername = base+'_doppler_corner.png'
+                    cornername = base+'_gaiaxpspec_corner.png'
                     if outdir is not None: cornername = outdir+'/'+cornername
                     if (outdir is None) & (fdir != ''): cornername = fdir+'/'+cornername
                     
-                # Run Doppler
-                out, model, specm = doppler.fit(spec,payne=payne,fitparams=fitparams,fixparams=fixparams,
-                                                mcmc=mcmc,figfile=figfile,verbose=verbose,
-                                                cornername=cornername,nthreads=nthreads,notweak=notweak,
-                                                tpoly=tpoly,tpolyorder=tpolyorder)
+                # Run gaiaxpspec
+                out = gaiaxspec.fitter.solvecat(f,mcmc=mcmc,figfile=figfile,verbose=verbose,cornername=cornername)
                 
                 # Save the output
                 if inpoutfile!='':
                     outfile = inpoutfile
                 else:
-                    fdir,base,ext = doppler.utils.splitfilename(f)
-                    outfile = base+'_doppler.fits'
+                    fdir,base,ext = utils.splitfilename(f)
+                    outfile = base+'_gaiaxpyspec.fits'
                     if outdir is not None: outfile = outdir+'/'+outfile
                     if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
                 if verbose is True:
@@ -195,8 +148,6 @@ if __name__ == "__main__":
                 hdulist.writeto(outfile,overwrite=True)
                 hdulist.close()
 
-                # Add SPECM??
-
             except Exception as e:
                 if verbose is True:
                     print('Doppler failed on '+f+' '+str(e))
@@ -204,62 +155,3 @@ if __name__ == "__main__":
 
 
                 
-    # Joint fitting
-    #--------------
-    else:
-
-        # Default output filename
-        if inpoutfile=='':
-            fdir,base,ext = doppler.utils.splitfilename(files[0])
-            outfile = base+'_doppler.fits'
-            if outdir is not None: outfile = outdir+'/'+outfile
-            if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
-        else:
-            outfile = inpoutfile
-            
-        if verbose is True:
-            print('--- Running Doppler Jointfit on '+str(len(files))+' spectra ---')
-            print('')
-            
-        # Load the spectra
-        if verbose is True: print('Loading the spectra')
-        speclist = []
-        for i,f in enumerate(files):
-            # Check that the file exists
-            if os.path.exists(f) is False:
-                raise ValueError(f+' NOT FOUND')
-
-            # Load the spectrum
-            spec = doppler.read(f,format=reader)
-
-            if verbose is True:
-                print('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
-                
-            # Append to the list
-            speclist.append(spec)
-    
-        # Run Doppler jointfit()
-        if verbose is True: print('')
-        sumstr, final, model, specmlist = doppler.jointfit(speclist,payne=payne,fitparams=fitparams,fixparams=fixparams,
-                                                           mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,
-                                                           verbose=verbose,outdir=outdir,nthreads=nthreads,
-                                                           notweak=notweak,tpoly=tpoly,tpolyorder=tpolyorder)
-        
-        # Save the output
-        if verbose is True:
-            print('Writing output to '+outfile)
-        if os.path.exists(outfile): os.remove(outfile)
-        # Summary average values
-        Table(sumstr).write(outfile)
-        # append other items
-        hdulist = fits.open(outfile)
-        # append final values for each spectrum
-        hdu = fits.table_to_hdu(Table(final))
-        hdulist.append(hdu)
-        # append best model
-        # there's a model for each spectrum, each one gets an extension
-        for i,m in enumerate(model):
-            hdu = fits.PrimaryHDU(m.flux)
-            hdulist.append(hdu)
-        hdulist.writeto(outfile,overwrite=True)
-        hdulist.close()
