@@ -4,13 +4,12 @@
    contain the root `toctree` directive.
 
 ***********
-gaussdecomp
+gaiaxpspec
 ***********
 
 Introduction
 ============
-|gaussdecomp| is a package to Gaussian Decomposition emission line spectra, for example
-HI spectra.  It also will run on an entire datacube at once.
+|gaiaxpspec| is a package to fit Gaia Bp/Rp spectra with models.
 
 
 .. toctree::

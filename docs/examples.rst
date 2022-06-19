@@ -3,10 +3,10 @@ Examples
 ********
 
 
-Running Python |gaussdecomp|
+Running Python |gaiaxpspec|
 ============================
 
-Here's an example of running Python |gaussdecomp| on a GBT datacube.
+Here's an example of running Python |gaiaxpspec| on a GBT datacube.
 
 
 .. code-block:: python
@@ -20,7 +20,7 @@ Here's an example of running Python |gaussdecomp| on a GBT datacube.
 	Y RANGE = [0,249]
 	X DIRECTION = 1
 	Y DIRECTION = 1
-	OUTFILE = gaussdecomp_20220329165135.fits
+	OUTFILE = gaiaxpspec_20220329165135.fits
 	-----------------------------------------------------------
 	USING (BACKRET) MODE
 	-----------------------------------------------------------
@@ -130,7 +130,7 @@ Here's an example of running Python |gaussdecomp| on a GBT datacube.
 
 	
 
-Running IDL |gaussdecomp|
+Running IDL |gaiaxpspec|
 =========================
 
 The main program is gdriver.pro.  I normally create a small IDL batch script to run segments of a cube.  An example one is provided using a small `GASS <https://www.atnf.csiro.au/research/GASS/index.html>`_ (`McClure-Griffiths et al. 2009 <https://ui.adsabs.harvard.edu/abs/2009ApJS..181..398M>`_) cube downloaded from https://www.astro.uni-bonn.de/hisurvey/gass/ using these parameters:
