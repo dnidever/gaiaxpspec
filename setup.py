@@ -4,7 +4,7 @@
 from setuptools import setup, find_packages
 
 setup(name='gaiaxpspec',
-      version='1.0.0',
+      version='1.0.1',
       description='Fit Gaia Bp/Rp spectra with models',
       author='David Nidever',
       author_email='dnidever@montana.edu',
