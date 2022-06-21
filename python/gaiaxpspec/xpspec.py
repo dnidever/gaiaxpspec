@@ -248,6 +248,9 @@ class XPSpec:
         flux = self._flux.copy()
         self.a55 = a55
         self.r55 = r55
+        if hasattr(self,'labels'):
+            self.labels[3] = a55
+            self.labels[4] = r55            
         
         # Extinct it
         if a55 > 0:

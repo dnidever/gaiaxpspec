@@ -79,8 +79,7 @@ def solvestar(spec,initpar=None,bounds=None):
             initpar[2] = 0.0
 
     # Load the model
-    m = model.load_model()
-    xpm = model.XPModel(m)
+    xpm = model.load_model()
             
     # Use curve_fit to find the best values
     tol = 5e-4   # tolerance for when the optimizer should stop optimizing.
