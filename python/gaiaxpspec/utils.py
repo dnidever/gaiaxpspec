@@ -109,7 +109,7 @@ def truncate(tab,nbp=None,nrp=None):
         else:
             numbp = nbp
             tab['bp_n_relevant_bases'][i] = nbp
-        if nbp < 55:
+        if numbp < 55:
             tab['bp_coefficients'][i,numbp:] = 0.0
             tab['bp_coefficient_errors'][i,numbp:] = 1e30
         if nrp is None:
@@ -117,7 +117,7 @@ def truncate(tab,nbp=None,nrp=None):
         else:
             numrp = nrp
             tab['rp_n_relevant_bases'][i] = nrp
-        if nrp < 55:
+        if numrp < 55:
             tab['rp_coefficients'][i,numrp:] = 0.0
             tab['rp_coefficient_errors'][i,numrp:] = 1e30
     return tab
