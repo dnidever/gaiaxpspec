@@ -38,12 +38,14 @@ print = utils.getprintfunc()
 
 apogee = Table.read(utils.datadir()+'apogee_library_spectra.fits.gz')
 
-# Load the default Payne model
-def apogee_estimate(spec):
+def library_estimate(spec,flux=False,truncation=True,library=None):
     """
-    Figure out the best parameters of a Bp/RP spectrum using the APOGEE library.
+    Figure out the best parameters of a Bp/Rp spectrum using an empirical library.
     """
 
+    if library is None:
+        library = apogee
+    
     # Initialize the output table
     dt = [('best_source_id',int),('best_apogee_id',(str,30)),('chisq',np.float32),
           ('teff',np.float32),('logg',np.float32),('feh',np.float32),('ak',np.float32)]
@@ -51,17 +53,44 @@ def apogee_estimate(spec):
     out = Table(out)
 
     # Calculate chisq
-    wtresid = ( (apogee['flux']-spec.flux.reshape(1,-1))/spec.err.reshape(1,-1) )**2
-    chisq = np.sum(wtresid,axis=1)
-    bestind = np.argmin(chisq)
-    bestflux = apogee['flux'][bestind]
+
+    # Use flux
+    if flux:
+        for c in ['flux','flux_error']:
+            if c not in library.columns:
+                raise ValueError('library much have '+c)
+            if c not in spec.columns:
+                raise ValueError('spec much have '+c)                        
+        wtresid = ( (library['flux']-spec['flux'].reshape(1,-1))/spec['err'].reshape(1,-1) )**2
+        chisq = np.sum(wtresid,axis=1)
+        bestind = np.argmin(chisq)
+
+    # Use coefficients
+    else:
+        # Check that we have the right columns:
+        for c in ['bp_coefficients','bp_coefficient_errors','rp_coefficients','rp_coefficient_errors']:
+            if c not in library.columns:
+                raise ValueError('library much have '+c)
+            if c not in spec.columns:
+                raise ValueError('spec much have '+c)            
+        if truncation:
+            nbp = int(spec['bp_n_relevant_bases'])
+            nrp = int(spec['rp_n_relevant_bases'])
+            bpwtresid = ( (library['bp_coefficients'][:,:nbp]-spec['bp_coefficients'][0,:nbp].reshape(1,-1))/spec['bp_coefficient_errors'][0,:nbp].reshape(1,-1) )**2
+            rpwtresid = ( (library['rp_coefficients'][:,:nrp]-spec['rp_coefficients'][0,:nrp].reshape(1,-1))/spec['rp_coefficient_errors'][0,:nrp].reshape(1,-1) )**2
+        else:
+            bpwtresid = ( (library['bp_coefficients']-spec['bp_coefficients'].reshape(1,-1))/spec['bp_coefficient_errors'].reshape(1,-1) )**2
+            rpwtresid = ( (library['rp_coefficients']-spec['rp_coefficients'].reshape(1,-1))/spec['rp_coefficient_errors'].reshape(1,-1) )**2            
+        chisq = np.sum(bpwtresid,axis=1)+np.sum(rpwtresid,axis=1)
+        bestind = np.argmin(chisq)
+        
     # Fit the table
-    out['best_source_id'] = apogee['gaiaedr3_source_id'][bestind]
-    out['best_apogee_id'] = apogee['apogee_id'][bestind]
-    out['teff'] = apogee['teff'][bestind]
-    out['logg'] = apogee['logg'][bestind]
-    out['feh'] = apogee['fe_h'][bestind]
-    out['ak'] = apogee['ak_targ'][bestind]
+    out['best_source_id'] = library['gaiaedr3_source_id'][bestind]
+    out['best_apogee_id'] = library['apogee_id'][bestind]
+    out['teff'] = library['teff'][bestind]
+    out['logg'] = library['logg'][bestind]
+    out['feh'] = library['fe_h'][bestind]
+    out['ak'] = library['ak_targ'][bestind]
     out['chisq'] = chisq[bestind]
 
     return out
@@ -73,7 +102,7 @@ def solvestar(spec,initpar=None,bounds=None):
 
     # Get initial guess, if necessary
     if initpar is None:
-        out = apogee_estimate(spec)
+        out = library_estimate(spec)
         initpar = [out['teff'][0],out['logg'][0],out['feh'][0],out['ak'][0]*9.25]
         if np.isfinite(out['feh'][0])==False:
             initpar[2] = 0.0

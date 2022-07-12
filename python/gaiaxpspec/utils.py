@@ -99,6 +99,29 @@ def normalize(tab,fluxnorm=False):
         tab['rp_coefficient_errors'] /= mn.reshape(-1,1)
         return tab
 
+def truncate(tab,nbp=None,nrp=None):
+    """ Truncate coefficients."""
+    if 'bp_n_relevant_bases' not in tab.columns or 'rp_n_relevant_bases' not in tab.columns:
+        raise ValueError('table must have bp_n_relevant_bases and rp_n_relevant_bases')
+    for i in range(len(tab)):
+        if nbp is None:
+            numbp = int(tab['bp_n_relevant_bases'][i])
+        else:
+            numbp = nbp
+            tab['bp_n_relevant_bases'][i] = nbp
+        if nbp < 55:
+            tab['bp_coefficients'][i,numbp:] = 0.0
+            tab['bp_coefficient_errors'][i,numbp:] = 1e30
+        if nrp is None:
+            numrp = int(tab['bp_n_relevant_bases'][i])
+        else:
+            numrp = nrp
+            tab['rp_n_relevant_bases'][i] = nrp
+        if nrp < 55:
+            tab['rp_coefficients'][i,numrp:] = 0.0
+            tab['rp_coefficient_errors'][i,numrp:] = 1e30
+    return tab
+        
 def getflux(tab):
     """ Calculate flux from coefficients."""
 
