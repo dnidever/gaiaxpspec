@@ -18,7 +18,7 @@ Getting stellar parameters using the APOGEE empirical library
     from gaiaxpspec import utils,fitter
 
     # Load the library spectra
-    library = Table.read('apogee_library_spectra.fits')    
+    library = Table.read(utils.datadir()+'apogee_library_spectra.fits.gz')    
     # Determine the best-matching stellar parameter for the "flux" spectrum
     out = fitter.library_estimate(flux,library=library)
 
