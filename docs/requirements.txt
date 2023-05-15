@@ -1,3 +1,4 @@
+versioneer
 numpy
 matplotlib
 astropy-helpers
