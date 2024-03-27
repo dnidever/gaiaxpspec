@@ -1,7 +1,7 @@
 versioneer
 numpy
 matplotlib
-astropy-helpers
+#astropy-helpers
 astropy
 scipy
 sphinx
